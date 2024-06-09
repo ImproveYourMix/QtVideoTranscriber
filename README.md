@@ -1,0 +1,2 @@
+# QtVideoTranscriber
+Qt video transcriber

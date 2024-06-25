@@ -107,6 +107,7 @@ private:
     void transcribeFile(const QString &wavFile, const QString &outputFile);
     bool output_json(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s, bool full);
     void updateTotalProgress();
+    int64_t get_current_timestamp_ms();
 };
 
 struct whisper_print_user_data {

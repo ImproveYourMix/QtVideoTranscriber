@@ -6,6 +6,9 @@
 #include <QFileInfo>
 #include <QProcess>
 
+#include <chrono>
+#include <ctime>
+
 Transcriber::Transcriber(std::atomic<bool>* abortFlag, QObject *parent)
     : QObject(parent), abortFlag(abortFlag) {}
 
@@ -224,6 +227,14 @@ void Transcriber::setVideoInfo(const QString &title, const QString &link) {
     this->videoHrefLink = link;
 }
 
+// Funzione per ottenere il timestamp corrente in millisecondi
+int64_t Transcriber::get_current_timestamp_ms() {
+    auto now = std::chrono::system_clock::now();
+    auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
+    auto epoch = now_ms.time_since_epoch();
+    return epoch.count();
+}
+
 
 bool Transcriber::output_json(
     struct whisper_context * ctx,
@@ -391,7 +402,7 @@ bool Transcriber::output_json(
         end_obj(i == (n_segments - 1));
     }
 
-    end_arr(true);
+    end_arr(false);
 
     // Aggiungi videoTitle e videoHrefLink
     start_value("videoTitle");
@@ -400,7 +411,11 @@ bool Transcriber::output_json(
     fout << "\"" << videoHrefLink.toStdString() << "\",\n";
 
     start_value("videoText");
-    fout << "\"" << escape_double_quotes(videoTextStream.str().c_str()) << "\"\n";
+    fout << "\"" << escape_double_quotes(videoTextStream.str().c_str()) << "\",\n";
+
+    // Aggiungi il timestamp
+    start_value("timestamp");
+    fout << "\"" << get_current_timestamp_ms() << "\"\n";
 
     end_obj(true);
     return true;

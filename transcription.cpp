@@ -27,8 +27,9 @@ Transcription::Transcription(const QString &file, const QString &outputFolder, i
 }
 
 Transcription::~Transcription() {
-    delete thread;
-    delete transcriber;
+    //TODO double check if this is necessary
+    //delete thread;
+    // delete transcriber;
 }
 
 void Transcription::start() {

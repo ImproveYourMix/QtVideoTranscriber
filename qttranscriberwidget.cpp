@@ -4,6 +4,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QTimer>
+#include <QFileInfo>
 
 
 QtTranscriberWidget::QtTranscriberWidget(QWidget *parent)
@@ -45,7 +46,7 @@ void QtTranscriberWidget::selectFiles() {
 
     for (int i = 0; i < selectedFiles.size(); ++i) {
         QStandardItem *fileItem = new QStandardItem(selectedFiles.at(i));
-        QStandardItem *titleItem = new QStandardItem("");
+        QStandardItem *titleItem = new QStandardItem(QFileInfo(selectedFiles.at(i)).baseName());
         QStandardItem *linkItem = new QStandardItem("");
         QStandardItem *progressItem = new QStandardItem("0%");
         QStandardItem *statusItem = new QStandardItem("Waiting");

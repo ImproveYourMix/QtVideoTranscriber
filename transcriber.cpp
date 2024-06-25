@@ -2,12 +2,221 @@
 #include "dr_wav.h"
 #include "common.h"
 
-Transcriber::Transcriber(std::atomic<bool>* abortFlag, QObject *parent) :
-    QObject(parent), abortFlag(abortFlag) {}
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+
+Transcriber::Transcriber(std::atomic<bool>* abortFlag, QObject *parent)
+    : QObject(parent), abortFlag(abortFlag) {}
 
 void Transcriber::setFileAndOutput(const QString &file, const QString &outputFolder) {
     this->file = file;
     this->outputFolder = outputFolder;
+}
+
+void Transcriber::startTranscription() {
+    if (abortFlag->load()) return;
+
+    QFileInfo fileInfo(file);
+    QString wavFile = outputFolder + "/" + fileInfo.baseName() + ".wav";
+    QString outputFile = outputFolder + "/" + fileInfo.baseName() + ".json";
+
+    if (fileInfo.suffix() == "mp4") {
+        emit statusUpdated("Extracting audio");
+        extractAudio(file, wavFile);
+    } else {
+        wavFile = file; // Use the WAV file directly
+    }
+
+    emit statusUpdated("Transcribing");
+    transcribeFile(wavFile, outputFile);
+    emit transcriptionFinished();
+}
+
+void Transcriber::abortTranscription() {
+    abortFlag->store(true);
+}
+
+void Transcriber::extractAudio(const QString &inputFile, const QString &outputFile) {
+    QProcess process;
+    QString ffmpegPath = QDir::currentPath() + "/ffmpeg";
+    process.start(ffmpegPath, QStringList() << "-y" << "-i" << inputFile << "-report" << "-ar" << "16000" << "-ac" << "1" << outputFile);
+    process.waitForFinished();
+    qInfo() << process.readAllStandardError();
+}
+
+void Transcriber::transcribeFile(const QString &wavFile, const QString &outputFile) {
+    whisper_context_params cparams = whisper_context_default_params();
+    cparams.use_gpu = params.use_gpu;
+    struct whisper_context *ctx = whisper_init_from_file_with_params(params.model.c_str(), cparams);
+
+    if (!ctx) {
+        emit statusUpdated("Failed to initialize Whisper context");
+        return;
+    }
+
+    std::vector<float> pcmf32;
+    std::vector<std::vector<float>> pcmf32s;
+    if (!read_wav(wavFile.toStdString(), pcmf32, pcmf32s, false)) {
+        emit statusUpdated("Failed to read WAV file");
+        whisper_free(ctx);
+        return;
+    }
+
+    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    wparams.print_realtime   = false;
+    wparams.print_progress   = params.print_progress;
+    wparams.print_timestamps = !params.no_timestamps;
+    wparams.print_special    = params.print_special;
+    wparams.translate        = params.translate;
+    wparams.language         = params.language.c_str();
+    wparams.n_threads        = params.n_threads;
+    wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
+    wparams.offset_ms        = params.offset_t_ms;
+    wparams.duration_ms      = params.duration_ms;
+
+    wparams.token_timestamps = params.output_wts || params.output_jsn_full || params.max_len > 0;
+    wparams.thold_pt         = params.word_thold;
+    wparams.max_len          = params.output_wts && params.max_len == 0 ? 60 : params.max_len;
+    wparams.audio_ctx        = params.audio_ctx;
+
+    wparams.tdrz_enable      = params.tinydiarize;
+
+    wparams.initial_prompt   = params.prompt.c_str();
+
+    wparams.greedy.best_of        = params.best_of;
+    wparams.beam_search.beam_size = params.beam_size;
+
+    wparams.entropy_thold    = params.entropy_thold;
+    wparams.logprob_thold    = params.logprob_thold;
+
+    wparams.no_timestamps    = params.no_timestamps;
+
+    whisper_print_user_data user_data = { &params, &pcmf32s, abortFlag, 0, this };
+
+    if (!wparams.print_realtime) {
+        wparams.new_segment_callback           = [](struct whisper_context * ctx, struct whisper_state * state, int n_new, void * user_data) {
+            auto & transcriber  = *((whisper_print_user_data *) user_data)->transcriber;
+            transcriber.whisper_print_segment_callback(ctx, state, n_new, user_data);
+        };
+        wparams.new_segment_callback_user_data = &user_data;
+    }
+
+    if (wparams.print_progress) {
+        wparams.progress_callback           = [](struct whisper_context * ctx, struct whisper_state * state, int progress, void * user_data){
+            auto & transcriber  = *((whisper_print_user_data *) user_data)->transcriber;
+            transcriber.whisper_print_progress_callback(ctx, state, progress, user_data);
+        };
+        wparams.progress_callback_user_data = &user_data;
+    }
+
+    wparams.abort_callback = [](void * user_data) {
+        qInfo("Abort callback");
+        const auto & is_aborted = *((whisper_print_user_data *) user_data)->is_aborted;
+        if(is_aborted) {
+            auto & transcriber  = *((whisper_print_user_data *) user_data)->transcriber;
+            transcriber.transcriptionFinished(true);
+        }
+        return is_aborted.load();
+    };
+    wparams.abort_callback_user_data = &user_data;
+
+    qInfo("Starting transcribe");
+    if (whisper_full(ctx, wparams, pcmf32.data(), pcmf32.size()) != 0) {
+        emit statusUpdated("Failed to process audio");
+        whisper_free(ctx);
+        return;
+    }
+    qInfo("Transcribe finished");
+
+    const auto fname_jsn = outputFile.toStdString();
+    output_json(ctx, fname_jsn.c_str(), params, pcmf32s, params.output_jsn_full);
+
+    whisper_free(ctx);
+
+    emit progressUpdated(100);
+    emit statusUpdated("Completed");
+    emit totalProgressUpdated(100); // Emitting the total progress
+}
+
+void Transcriber::whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data) {
+    qInfo("whisper_print_progress_callback");
+    int progress_step = ((whisper_print_user_data *) user_data)->params->progress_step;
+    int * progress_prev  = &(((whisper_print_user_data *) user_data)->progress_prev);
+    qInfo("progress: %d - progress_prev: %d - step: %d", progress, *progress_prev, progress_step);
+    if (progress >= *progress_prev + progress_step) {
+        *progress_prev += progress_step;
+        qInfo("progress: %d", progress);
+        emit progressUpdated(progress);
+        emit totalProgressUpdated(progress); // Emitting the total progress
+    }
+}
+
+void Transcriber::whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data) {
+    qInfo("whisper_print_segment_callback");
+    const auto & params  = *((whisper_print_user_data *) user_data)->params;
+    const int n_segments = whisper_full_n_segments(ctx);
+
+    std::string speaker = "";
+
+    int64_t t0 = 0;
+    int64_t t1 = 0;
+
+    const int s0 = n_segments - n_new;
+
+    if (s0 == 0) {
+        printf("\n");
+    }
+
+    for (int i = s0; i < n_segments; i++) {
+        if (!params.no_timestamps || params.diarize) {
+            t0 = whisper_full_get_segment_t0(ctx, i);
+            t1 = whisper_full_get_segment_t1(ctx, i);
+        }
+
+        if (!params.no_timestamps) {
+            printf("[%s --> %s]  ", to_timestamp(t0).c_str(), to_timestamp(t1).c_str());
+        }
+
+        const char * text = whisper_full_get_segment_text(ctx, i);
+
+        printf("%s%s", speaker.c_str(), text);
+
+        if (!params.no_timestamps) {
+            printf("\n");
+        }
+
+        fflush(stdout);
+    }
+}
+
+char* escape_double_quotes(const char* input) {
+    size_t length = strlen(input);
+    size_t new_length = length;
+
+    // Calcola la lunghezza del nuovo array di caratteri con l'escape
+    for (size_t i = 0; i < length; ++i) {
+        if (input[i] == '"') {
+            new_length++;
+        }
+    }
+
+    // Alloca memoria per il nuovo array di caratteri
+    char* output = (char*)malloc(new_length + 1);
+    if (!output) {
+        return nullptr; // Gestione dell'errore di allocazione
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < length; ++i) {
+        if (input[i] == '"') {
+            output[j++] = '\\';
+        }
+        output[j++] = input[i];
+    }
+    output[new_length] = '\0';
+
+    return output;
 }
 
 void Transcriber::setVideoInfo(const QString &title, const QString &link) {
@@ -15,13 +224,6 @@ void Transcriber::setVideoInfo(const QString &title, const QString &link) {
     this->videoHrefLink = link;
 }
 
-void Transcriber::startTranscription() {
-    // Implementation of the transcription process
-}
-
-void Transcriber::abortTranscription() {
-    // Implementation of the abort transcription process
-}
 
 bool Transcriber::output_json(
     struct whisper_context * ctx,
@@ -151,10 +353,10 @@ bool Transcriber::output_json(
     const int n_segments = whisper_full_n_segments(ctx);
     for (int i = 0; i < n_segments; ++i) {
         const char* text = whisper_full_get_segment_text(ctx, i);
-        
+
         // Esegui l'escape delle doppie virgolette nella variabile text
         char* escaped_text = escape_double_quotes(text);
-        
+
         videoTextStream << escaped_text << " ";
 
         const int64_t t0 = whisper_full_get_segment_t0(ctx, i);

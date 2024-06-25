@@ -17,13 +17,23 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
 # Directory for the whisper.cpp library
 add_subdirectory(whisper.cpp)
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(BUILD_SHARED_LIBS_DEFAULT OFF)
+    set(MAIN_WINDOW_SOURCES
+            main.cpp
+            mainwindow.cpp
+            mainwindow.h
+            mainwindow.ui)
+else()
+    set(BUILD_SHARED_LIBS_DEFAULT ON)
+endif()
+
+option(BUILD_SHARED_LIBS "Build using shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
+
 #set(TS_FILES VideoTranscriber_it_IT.ts)
 
 set(PROJECT_SOURCES
-    main.cpp
-    mainwindow.cpp
-    mainwindow.h
-    mainwindow.ui
+    ${MAIN_WINDOW_SOURCES}
     transcriber.cpp
     transcriber.h
     common.h
@@ -36,29 +46,17 @@ set(PROJECT_SOURCES
     transcription.cpp
     transcriptionmodel.h
     transcriptionmodel.cpp
+    qttranscriberwidget.h qttranscriberwidget.cpp
+    qttranscriberwidget.ui
 )
 
-if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(VideoTranscriber
-        MANUAL_FINALIZATION
-        ${PROJECT_SOURCES}
-        .gitignore
-    )
+#verify if VIdeoTrascriber is compiled by another project or iss a standalone
+qt_add_executable(VideoTranscriber
+    ${PROJECT_SOURCES}
+)
 
-    qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
-else()
-    if(ANDROID)
-        add_library(VideoTranscriber SHARED
-            ${PROJECT_SOURCES}
-        )
-    else()
-        add_executable(VideoTranscriber
-            ${PROJECT_SOURCES}
-        )
-    endif()
+qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 
-    qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
-endif()
 
 target_link_libraries(VideoTranscriber PRIVATE Qt${QT_VERSION_MAJOR}::Widgets whisper)
 
@@ -73,24 +71,18 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
        $<TARGET_FILE_DIR:${PROJECT_NAME}>/models
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-       ${CMAKE_SOURCE_DIR}/models/ggml-medium-q5_0.bin
-       $<TARGET_FILE_DIR:${PROJECT_NAME}>/models
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_SOURCE_DIR}/models/ggml-medium.bin
       $<TARGET_FILE_DIR:${PROJECT_NAME}>/models
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-       ${CMAKE_SOURCE_DIR}/whisper.dll
+       ${CMAKE_BINARY_DIR}/bin/whisper.dll
        $<TARGET_FILE_DIR:${PROJECT_NAME}>
-    COMMAND ${Qt${QT_VERSION_MAJOR}_INSTALL_DIR}/bin/windeployqt --dir $<TARGET_FILE_DIR:${PROJECT_NAME}> $<TARGET_FILE:${PROJECT_NAME}>
+    #COMMAND ${Qt${QT_VERSION_MAJOR}_INSTALL_DIR}/bin/windeployqt --dir $<TARGET_FILE_DIR:${PROJECT_NAME}> $<TARGET_FILE:${PROJECT_NAME}>
 )
 
 install(TARGETS VideoTranscriber
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-if(QT_VERSION_MAJOR EQUAL 6)
-    qt_finalize_executable(VideoTranscriber)
-endif()
 
 # CPack configuration
 include(InstallRequiredSystemLibraries)

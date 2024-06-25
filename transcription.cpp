@@ -6,17 +6,17 @@ Transcription::Transcription(const QString &file, const QString &outputFolder, i
     transcriber = new Transcriber(&abortFlag); // Pass the abort flag to the transcriber
     transcriber->moveToThread(thread);
 
-    connect(thread, &QThread::started, transcriber, [this]() {
+    connect(thread, &QThread::started, transcriber, [this, file, outputFolder, title, link]() {
         transcriber->setFileAndOutput(file, outputFolder);
         transcriber->setVideoInfo(title, link);
         transcriber->startTranscription();
     });
 
-    connect(transcriber, &Transcriber::progressUpdated, this, [this](int progress) {
+    connect(transcriber, &Transcriber::progressUpdated, this, [this, row](int progress) {
         emit progressUpdated(row, progress);
     });
 
-    connect(transcriber, &Transcriber::statusUpdated, this, [this](const QString &status) {
+    connect(transcriber, &Transcriber::statusUpdated, this, [this, row](const QString &status) {
         emit statusUpdated(row, status);
     });
 

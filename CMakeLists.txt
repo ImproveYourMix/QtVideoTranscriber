@@ -81,24 +81,36 @@ qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 
 target_link_libraries(VideoTranscriber PRIVATE Qt${QT_VERSION_MAJOR}::Widgets whisper)
 
+if(APPLE)
+    set(FFMPEG_FILE "ffmpeg")
+
+else()
+    set(FFMPEG_FILE "ffmpeg.exe")
+endif()
+
+
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg.exe
+        ${CMAKE_CURRENT_SOURCE_DIR}/${FFMPEG_FILE}
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     COMMAND ${CMAKE_COMMAND} -E make_directory
        $<TARGET_FILE_DIR:${PROJECT_NAME}>/models
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_CURRENT_SOURCE_DIR}/models/ggml-medium.bin
-      $<TARGET_FILE_DIR:${PROJECT_NAME}>/models
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-       ${CMAKE_BINARY_DIR}/bin/whisper.dll
-       $<TARGET_FILE_DIR:${PROJECT_NAME}>
-   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${CMAKE_BINARY_DIR}/bin/ggml.dll
-      $<TARGET_FILE_DIR:${PROJECT_NAME}>
+      $<TARGET_FILE_DIR:${PROJECT_NAME}>/models          
     #COMMAND ${Qt${QT_VERSION_MAJOR}_INSTALL_DIR}/bin/windeployqt --dir $<TARGET_FILE_DIR:${PROJECT_NAME}> $<TARGET_FILE:${PROJECT_NAME}>
 )
 
+if(WIN32)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+           ${CMAKE_BINARY_DIR}/bin/whisper.dll
+           $<TARGET_FILE_DIR:${PROJECT_NAME}>
+       COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_BINARY_DIR}/bin/ggml.dll
+          $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    )
+endif()
 
 # CPack configuration
 include(InstallRequiredSystemLibraries)

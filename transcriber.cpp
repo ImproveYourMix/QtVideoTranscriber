@@ -222,6 +222,34 @@ char* escape_double_quotes(const char* input) {
     return output;
 }
 
+char* remove_double_quotes(const char* input) {
+    size_t length = strlen(input);
+    size_t new_length = length;
+
+    // Calcola la lunghezza del nuovo array di caratteri senza le virgolette doppie
+    for (size_t i = 0; i < length; ++i) {
+        if (input[i] == '"') {
+            new_length--;
+        }
+    }
+
+    // Alloca memoria per il nuovo array di caratteri
+    char* output = (char*)malloc(new_length + 1);
+    if (!output) {
+        return nullptr; // Gestione dell'errore di allocazione
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < length; ++i) {
+        if (input[i] != '"') {
+            output[j++] = input[i];
+        }
+    }
+    output[new_length] = '\0';
+
+    return output;
+}
+
 void Transcriber::setVideoInfo(const QString &title, const QString &link) {
     this->videoTitle = title;
     this->videoHrefLink = link;
@@ -286,9 +314,9 @@ bool Transcriber::output_json(
 
     auto value_s = [&](const char *name, const char *val, bool end) {
         start_value(name);
-        char * val_escaped = escape_double_quotes(val);
-        fout << "\"" << val_escaped << (end ? "\"\n" : "\",\n");
-        free(val_escaped);
+        char * val_no_quotes = remove_double_quotes(val);
+        fout << "\"" << val_no_quotes << (end ? "\"\n" : "\",\n");
+        free(val_no_quotes);
     };
 
     auto end_value = [&](bool end) {
@@ -365,19 +393,19 @@ bool Transcriber::output_json(
     for (int i = 0; i < n_segments; ++i) {
         const char* text = whisper_full_get_segment_text(ctx, i);
 
-        // Esegui l'escape delle doppie virgolette nella variabile text
-        char* escaped_text = escape_double_quotes(text);
+        // Rimuovi le virgolette doppie nella variabile text
+        char* no_quotes_text = remove_double_quotes(text);
 
-        videoTextStream << escaped_text << " ";
+        videoTextStream << no_quotes_text << " ";
 
         const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
         const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
 
         start_obj(nullptr);
         times_o(t0, t1, false);
-        value_s("text", escaped_text, !params.diarize && !params.tinydiarize && !full);
+        value_s("text", no_quotes_text, !params.diarize && !params.tinydiarize && !full);
 
-        free(escaped_text); // Libera la memoria allocata per escaped_text
+        free(no_quotes_text); // Libera la memoria allocata per no_quotes_text
 
         if (full) {
             start_arr("tokens");
@@ -385,7 +413,7 @@ bool Transcriber::output_json(
             for (int j = 0; j < n; ++j) {
                 auto token = whisper_full_get_token_data(ctx, i, j);
                 start_obj(nullptr);
-                char* token_text = escape_double_quotes(whisper_token_to_str(ctx, token.id));
+                char* token_text = remove_double_quotes(whisper_token_to_str(ctx, token.id));
                 value_s("text", token_text, false);
                 free(token_text);
                 if (token.t0 > -1 && token.t1 > -1) {
@@ -411,7 +439,7 @@ bool Transcriber::output_json(
     fout << "\"" << videoHrefLink.toStdString() << "\",\n";
 
     start_value("videoText");
-    fout << "\"" << escape_double_quotes(videoTextStream.str().c_str()) << "\",\n";
+    fout << "\"" << remove_double_quotes(videoTextStream.str().c_str()) << "\",\n";
 
     // Aggiungi il timestamp
     start_value("timestamp");
@@ -420,3 +448,5 @@ bool Transcriber::output_json(
     end_obj(true);
     return true;
 }
+
+

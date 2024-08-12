@@ -57,7 +57,7 @@ struct whisper_params {
 
     std::string language  = "it";
     std::string prompt;
-    std::string model     = "models/ggml-medium.bin";
+    std::string model     = "./models/ggml-medium.bin";
     std::string grammar;
     std::string grammar_rule;
 

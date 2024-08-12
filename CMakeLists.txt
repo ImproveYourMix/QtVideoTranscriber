@@ -55,8 +55,17 @@ set(PROJECT_SOURCES
 if(BUILD_SHARED_LIBS)
     qt_add_library(VideoTranscriber SHARED
         ${PROJECT_SOURCES}
+        "${resource_files}"
     )
-    set_target_properties(VideoTranscriber PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(VideoTranscriber PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+            ${BUNDLE_ID_OPTION}
+            MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+            MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+            RESOURCE "${resource_files}"
+            MACOSX_BUNDLE TRUE
+            WIN32_EXECUTABLE TRUE
+        )
     target_include_directories(VideoTranscriber PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
                                                        ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp/include
                                                        ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp/ggml/include)
@@ -88,6 +97,7 @@ else()
     set(FFMPEG_FILE "ffmpeg.exe")
 endif()
 
+set(resource_files, models/ggml-medium.bin ${FFMPEG_FILE})
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

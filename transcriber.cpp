@@ -22,8 +22,11 @@ void Transcriber::startTranscription() {
     if (abortFlag->load()) return;
 
     QFileInfo fileInfo(file);
-    QString wavFile = outputFolder + "/" + fileInfo.baseName() + ".wav";
-    QString outputFile = outputFolder + "/" + fileInfo.baseName() + ".json";
+    QString wavFile = outputFolder + "/" + fileInfo.completeBaseName() + ".wav";
+    QString outputFile = outputFolder + "/" + fileInfo.completeBaseName() + ".json";
+
+    qInfo() << "Transcribing file: " << wavFile;
+    qInfo() << "Output file: " << outputFile;
 
     if (fileInfo.suffix() == "mp4") {
         qInfo() << "Extracting audio";
@@ -140,6 +143,7 @@ void Transcriber::transcribeFile(const QString &wavFile, const QString &outputFi
     qInfo("Transcribe finished");
 
     const auto fname_jsn = outputFile.toStdString();
+    qInfo() << "Output JSON: " << fname_jsn.c_str();
     output_json(ctx, fname_jsn.c_str(), params, pcmf32s, params.output_jsn_full);
 
     whisper_free(ctx);

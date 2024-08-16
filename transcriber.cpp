@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QCoreApplication>
 
 #include <chrono>
 #include <ctime>
@@ -21,10 +22,14 @@ void Transcriber::startTranscription() {
     if (abortFlag->load()) return;
 
     QFileInfo fileInfo(file);
-    QString wavFile = outputFolder + "/" + fileInfo.baseName() + ".wav";
-    QString outputFile = outputFolder + "/" + fileInfo.baseName() + ".json";
+    QString wavFile = outputFolder + "/" + fileInfo.completeBaseName() + ".wav";
+    QString outputFile = outputFolder + "/" + fileInfo.completeBaseName() + ".json";
+
+    qInfo() << "Transcribing file: " << wavFile;
+    qInfo() << "Output file: " << outputFile;
 
     if (fileInfo.suffix() == "mp4") {
+        qInfo() << "Extracting audio";
         emit statusUpdated("Extracting audio");
         extractAudio(file, wavFile);
     } else {
@@ -42,16 +47,21 @@ void Transcriber::abortTranscription() {
 
 void Transcriber::extractAudio(const QString &inputFile, const QString &outputFile) {
     QProcess process;
-    QString ffmpegPath = QDir::currentPath() + "/ffmpeg";
-    process.start(ffmpegPath, QStringList() << "-y" << "-i" << inputFile << "-report" << "-ar" << "16000" << "-ac" << "1" << outputFile);
+    QString ffmpegPath = QCoreApplication::applicationDirPath() + "/ffmpeg";
+    qInfo() << "ffmpeg path" << ffmpegPath;
+    process.start(ffmpegPath, QStringList() << "-y" << "-i" << inputFile << "-ar" << "16000" << "-ac" << "1" << outputFile);
     process.waitForFinished();
     qInfo() << process.readAllStandardError();
+    qInfo() << process.readAllStandardOutput();
 }
 
 void Transcriber::transcribeFile(const QString &wavFile, const QString &outputFile) {
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = params.use_gpu;
-    struct whisper_context *ctx = whisper_init_from_file_with_params(params.model.c_str(), cparams);
+    std::string basePath = QCoreApplication::applicationDirPath().toStdString();
+    std::string modelPath = basePath + "/" + params.model;
+    qInfo() << "model path" << QString::fromStdString(modelPath);
+    struct whisper_context *ctx = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
     if (!ctx) {
         emit statusUpdated("Failed to initialize Whisper context");
@@ -133,6 +143,7 @@ void Transcriber::transcribeFile(const QString &wavFile, const QString &outputFi
     qInfo("Transcribe finished");
 
     const auto fname_jsn = outputFile.toStdString();
+    qInfo() << "Output JSON: " << fname_jsn.c_str();
     output_json(ctx, fname_jsn.c_str(), params, pcmf32s, params.output_jsn_full);
 
     whisper_free(ctx);

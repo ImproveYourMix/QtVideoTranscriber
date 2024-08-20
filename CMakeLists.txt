@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.29)
 
 project(VideoTranscriber VERSION 0.1 LANGUAGES CXX)
 
@@ -30,7 +30,7 @@ else()
     set(BUILD_SHARED_LIBS_DEFAULT ON)
 endif()
 
-option(BUILD_SHARED_LIBS "Build using shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
+option(BUILD_AS_LIB "Build using shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
 
 #set(TS_FILES VideoTranscriber_it_IT.ts)
 
@@ -52,8 +52,8 @@ set(PROJECT_SOURCES
     qttranscriberwidget.ui
 )
 
-if(BUILD_SHARED_LIBS)
-    qt_add_library(VideoTranscriber SHARED
+if(BUILD_AS_LIB)
+    qt_add_library(VideoTranscriber STATIC
         ${PROJECT_SOURCES}
         "${resource_files}"
     )
